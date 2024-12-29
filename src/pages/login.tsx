@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/router";
 import { Inter } from "next/font/google";
 import Head from "next/head";
@@ -9,6 +9,14 @@ export default function LoginPage() {
     const [accessKey, setAccessKey] = useState("");
     const [errorMessage, setErrorMessage] = useState("");
     const router = useRouter();
+
+    // Clear any existing authentication when login page loads
+    useEffect(() => {
+        localStorage.removeItem('isAuthenticated');
+        localStorage.removeItem('sessionStartTime');
+        localStorage.removeItem('activeTabId');
+        sessionStorage.removeItem('tabId');
+    }, []);
 
     const validateKey = async () => {
         if (!accessKey) {
@@ -30,8 +38,15 @@ export default function LoginPage() {
             const data = await response.json();
 
             if (data.message) {
-                // Store authentication status in localStorage
+                // Generate a unique tab ID
+                const tabId = Math.random().toString(36).substring(2, 15);
+                // Store authentication status, session start time, and tab ID
                 localStorage.setItem('isAuthenticated', 'true');
+                localStorage.setItem('sessionStartTime', Math.floor(Date.now() / 1000).toString());
+                sessionStorage.setItem('tabId', tabId);
+                localStorage.setItem('activeTabId', tabId);
+                // Set authentication cookie
+                document.cookie = `isAuthenticated=true; path=/; max-age=${15 * 60}`; // 15 minutes
                 router.push("/"); // Redirect to main page
             } else if (data.error) {
                 setErrorMessage(data.error);

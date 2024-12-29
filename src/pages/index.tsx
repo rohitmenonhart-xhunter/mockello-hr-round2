@@ -8,6 +8,7 @@ import { Inter } from "next/font/google";
 import Head from "next/head";
 import { useCallback, useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/router";
+import type { GetServerSideProps } from 'next';
 
 import { PlaygroundConnect } from "@/components/PlaygroundConnect";
 import Playground from "@/components/playground/Playground";
@@ -42,14 +43,76 @@ export function HomeInner() {
   
   const {config} = useConfig();
   const { toastMessage, setToastMessage } = useToast();
-  const [timeLeft, setTimeLeft] = useState(15 * 60); // 15 minutes in seconds
+  const [timeLeft, setTimeLeft] = useState(0);
 
+  // Immediate authentication check
+  useEffect(() => {
+    // Check authentication immediately when component mounts
+    const checkAndRedirect = () => {
+      const isAuthenticated = localStorage.getItem('isAuthenticated');
+      const sessionStartTime = localStorage.getItem('sessionStartTime');
+      const currentTabId = sessionStorage.getItem('tabId');
+      const activeTabId = localStorage.getItem('activeTabId');
+
+      if (!isAuthenticated || !sessionStartTime || !currentTabId || !activeTabId || currentTabId !== activeTabId) {
+        // Clear any existing auth data and redirect
+        localStorage.removeItem('isAuthenticated');
+        localStorage.removeItem('sessionStartTime');
+        localStorage.removeItem('activeTabId');
+        sessionStorage.removeItem('tabId');
+        router.push('/login');
+        return false;
+      }
+      return true;
+    };
+
+    // Run check immediately
+    if (!checkAndRedirect()) {
+      return;
+    }
+  }, [router]);
+
+  // Timer effect
   useEffect(() => {
     const isAuthenticated = localStorage.getItem('isAuthenticated');
+    const sessionStartTime = localStorage.getItem('sessionStartTime');
+    const SESSION_DURATION = 15 * 60; // 15 minutes in seconds
+    const currentTabId = sessionStorage.getItem('tabId');
+    const activeTabId = localStorage.getItem('activeTabId');
+
+    // Check if this is a new tab or not the active tab
+    if (!currentTabId || currentTabId !== activeTabId) {
+      logout();
+      router.push('/login');
+      return;
+    }
+
     if (!isAuthenticated) {
       router.push('/login');
       return;
     }
+
+    // If no session start time exists or it's invalid, redirect to login
+    if (!sessionStartTime) {
+      logout();
+      router.push('/login');
+      return;
+    }
+
+    const startTime = parseInt(sessionStartTime);
+    const currentTime = Math.floor(Date.now() / 1000);
+    const elapsedTime = currentTime - startTime;
+    const remainingTime = SESSION_DURATION - elapsedTime;
+
+    // If session has expired
+    if (remainingTime <= 0) {
+      logout();
+      router.push('/login');
+      return;
+    }
+
+    // Set initial remaining time
+    setTimeLeft(remainingTime);
 
     // Start the countdown timer
     const timer = setInterval(() => {
@@ -64,22 +127,9 @@ export function HomeInner() {
       });
     }, 1000);
 
-    // Reset timer on any user activity
-    const resetTimer = () => {
-      setTimeLeft(15 * 60);
-    };
-
-    // Add event listeners for user activity
-    window.addEventListener('mousemove', resetTimer);
-    window.addEventListener('keypress', resetTimer);
-    window.addEventListener('click', resetTimer);
-
     // Cleanup
     return () => {
       clearInterval(timer);
-      window.removeEventListener('mousemove', resetTimer);
-      window.removeEventListener('keypress', resetTimer);
-      window.removeEventListener('click', resetTimer);
     };
   }, [router]);
 
@@ -174,4 +224,26 @@ export function HomeInner() {
       </main>
     </>
   );
+}
+
+export const getServerSideProps: GetServerSideProps = async (context) => {
+  const { req } = context;
+  
+  // Check for authentication cookie/session
+  if (typeof window === 'undefined') {
+    // We're on the server side
+    const cookies = req.headers.cookie;
+    if (!cookies || !cookies.includes('isAuthenticated=true')) {
+      return {
+        redirect: {
+          destination: '/login',
+          permanent: false,
+        },
+      };
+    }
+  }
+
+  return {
+    props: {}, // will be passed to the page component as props
+  };
 }
